@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta name="theme-color" content="#141210"/>
+<link rel="manifest" href="manifest.webmanifest"/>
+<link rel="apple-touch-icon" href="icon-192.png"/>
+<title>ELYNE Cosmetics — Gestion</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:wght@500;600;700&family=Jost:wght@300;400;500;600&display=swap"/>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Jost',system-ui,sans-serif;background:#F4F1EC;color:#141210;-webkit-font-smoothing:antialiased}
+  input,select,textarea,button{font-family:inherit}
+  .disp{font-family:'Bodoni Moda',Georgia,serif}
+  ::-webkit-scrollbar{width:0}
+  @keyframes pop{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .card{animation:pop .25s ease}
+  .tapb:active{transform:scale(.97)}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script>
+  var db=null;
+  try{
+    firebase.initializeApp({
+      apiKey:"AIzaSyBwUuIiQn4KPMxeAV-rIAingppE0HVPS9Q",
+      authDomain:"elyne-cosmtics.firebaseapp.com",
+      projectId:"elyne-cosmtics",
+      storageBucket:"elyne-cosmtics.firebasestorage.app",
+      messagingSenderId:"425086360276",
+      appId:"1:425086360276:web:0b2a4e00ba4665d79b7941"
+    });
+    db=firebase.firestore();
+  }catch(e){console.warn("Firebase indisponible",e);}
+</script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef}=React;
+const C={bg:"#F4F1EC",card:"#fff",ink:"#141210",soft:"#8C857C",line:"#ECE6DD",gold:"#9A7B4F",green:"#1F9E55",red:"#C8102E",cream:"#FAF7F3",blue:"#2563EB"};
+const disp={fontFamily:"'Bodoni Moda',Georgia,serif"};
+const CUR="DT";
+const money=n=>(Number(n)||0).toFixed(0)+" "+CUR;
+const DEFAULT_PASS="elyne123";
+
+/* ---------- PDF ---------- */
+function genPDF(kind,order,cfg){
+  if(!window.jspdf){alert("PDF: librairie non chargée, réessaie.");return;}
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:"mm",format:"a4"});
+  const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight();
+  const ink=[20,18,16], gold=[154,123,79], soft=[140,133,124];
+  const title=kind==="facture"?"FACTURE":"BON DE LIVRAISON";
+  doc.setTextColor.apply(doc,ink); doc.setFont("helvetica","bold"); doc.setFontSize(30);
+  doc.text("ELYNE",20,26);
+  doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor.apply(doc,gold);
+  doc.text("C O S M E T I C S",20,31);
+  doc.setTextColor.apply(doc,soft); doc.setFontSize(8);
+  doc.text("Parfums & Beaute de luxe  -  Tunisie",20,37);
+  doc.text("WhatsApp: +"+((cfg&&cfg.whatsapp)||"216")+"   -   elynecosimitics.com",20,41);
+  doc.setTextColor.apply(doc,ink); doc.setFont("helvetica","bold"); doc.setFontSize(19);
+  doc.text(title,W-20,25,{align:"right"});
+  doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor.apply(doc,soft);
+  const num=(kind==="facture"?"FAC-":"BL-")+((order.num)||String(order._id||"").slice(0,6).toUpperCase()||"0001");
+  doc.text("N0: "+num,W-20,31,{align:"right"});
+  doc.text("Date: "+(order.date||new Date().toLocaleDateString("fr-FR")),W-20,36,{align:"right"});
+  doc.setDrawColor.apply(doc,gold); doc.setLineWidth(0.6); doc.line(20,46,W-20,46);
+  doc.setTextColor.apply(doc,soft); doc.setFont("helvetica","bold"); doc.setFontSize(8); doc.text("CLIENT",20,56);
+  doc.setTextColor.apply(doc,ink); doc.setFont("helvetica","bold"); doc.setFontSize(13); doc.text(order.nom||"Client",20,62);
+  doc.setFont("helvetica","normal"); doc.setFontSize(9);
+  doc.text("Tel: "+(order.tel||"-"),20,68);
+  const addr=((order.adresse||"")+", "+(order.ville||"")+" "+(order.gouvernorat||"")).replace(/^,\s*/,"").trim();
+  if(addr) doc.text(addr,20,73);
+  doc.setTextColor.apply(doc,soft); doc.setFont("helvetica","bold"); doc.setFontSize(8); doc.text("PAIEMENT",W-20,56,{align:"right"});
+  doc.setTextColor.apply(doc,ink); doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.text("Paiement a la livraison",W-20,62,{align:"right"});
+  const its=(order.items||[]).map(it=>[it.nom||"",it.marque||"",String(it.qte||1),(Number(it.prix)||0).toFixed(2),((it.qte||1)*(Number(it.prix)||0)).toFixed(2)]);
+  const total=order.total!=null?order.total:(order.items||[]).reduce((s,it)=>s+(it.qte||1)*(Number(it.prix)||0),0);
+  doc.autoTable({
+    startY:82,
+    head:[["Designation","Marque","Qte","P.U. (DT)","Total (DT)"]],
+    body:its.length?its:[["—","","","",""]],
+    foot:[["","","","TOTAL",Number(total).toFixed(2)+" DT"]],
+    headStyles:{fillColor:ink,textColor:255,fontStyle:"bold"},
+    footStyles:{fillColor:gold,textColor:255,fontStyle:"bold",fontSize:11},
+    columnStyles:{2:{halign:"right"},3:{halign:"right"},4:{halign:"right"}},
+    styles:{fontSize:9,cellPadding:2.6}, alternateRowStyles:{fillColor:[250,247,243]},
+    margin:{left:20,right:20}
+  });
+  let y=doc.lastAutoTable.finalY+20;
+  doc.setDrawColor(231,224,214); doc.setLineWidth(0.5); doc.line(W-70,y,W-20,y);
+  doc.setTextColor.apply(doc,soft); doc.setFontSize(8); doc.text("Cachet & Signature",W-20,y+5,{align:"right"});
+  doc.setTextColor.apply(doc,soft); doc.setFontSize(8);
+  doc.text("Merci pour votre confiance — ELYNE COSMETICS",W/2,H-18,{align:"center"});
+  doc.text("Document genere automatiquement — elynecosimitics.com",W/2,H-13,{align:"center"});
+  doc.save("Elyne-"+kind+"-"+String(order.nom||"client").replace(/\s+/g,"_")+".pdf");
+}
+
+/* ---------- UI bits ---------- */
+function Logo({small}){return(
+  <div style={{textAlign:"center"}}>
+    <div className="disp" style={{fontSize:small?22:30,letterSpacing:2,lineHeight:1,color:"#fff"}}>ELYNE</div>
+    <div style={{fontSize:small?7:9,letterSpacing:6,color:C.gold,marginTop:2}}>COSMETICS</div>
+  </div>
+);}
+const ICON={bilan:"📊",cmd:"🧾",stock:"📦",set:"⚙️"};
+
+function Stat({k,v,sub,color}){return(
+  <div className="card" style={{background:C.card,borderRadius:16,padding:"16px 14px",boxShadow:"0 2px 10px #1412100c",flex:1,minWidth:0}}>
+    <div style={{fontSize:22,fontWeight:600,color:color||C.ink}}>{v}</div>
+    <div style={{fontSize:12,color:C.soft,marginTop:2}}>{k}</div>
+    {sub&&<div style={{fontSize:11,color:C.gold,marginTop:3}}>{sub}</div>}
+  </div>
+);}
+
+/* ---------- LOGIN ---------- */
+function Login({pass,onOk}){
+  const [p,setP]=useState(""),[e,setE]=useState("");
+  const go=()=>{ if(p===(pass||DEFAULT_PASS)) onOk(); else setE("Mot de passe incorrect."); };
+  return(
+    <div style={{minHeight:"100vh",background:C.ink,display:"flex",flexDirection:"column",justifyContent:"center",padding:28}}>
+      <div style={{marginBottom:36}}><Logo/></div>
+      <div style={{background:"#1d1a17",borderRadius:18,padding:24,border:"1px solid #2a2620"}}>
+        <div style={{textAlign:"center",color:"#fff",fontSize:16,marginBottom:4}}>Espace gestion</div>
+        <div style={{textAlign:"center",color:C.soft,fontSize:12,marginBottom:20}}>Connecte-toi pour gérer ta boutique</div>
+        <input type="password" value={p} onChange={ev=>{setP(ev.target.value);setE("");}} onKeyDown={ev=>ev.key==="Enter"&&go()} placeholder="Mot de passe"
+          style={{width:"100%",padding:"14px 16px",borderRadius:10,border:"1px solid #34302a",background:"#15120f",color:"#fff",fontSize:15,outline:"none"}}/>
+        {e&&<div style={{color:"#ff9a9a",fontSize:12,marginTop:8}}>{e}</div>}
+        <button className="tapb" onClick={go} style={{width:"100%",marginTop:16,padding:15,borderRadius:10,border:"none",background:C.gold,color:"#fff",fontSize:13,letterSpacing:2,textTransform:"uppercase",fontWeight:600}}>Se connecter</button>
+      </div>
+      <div style={{textAlign:"center",color:C.soft,fontSize:11,marginTop:20}}>ELYNE Cosmetics · Gestion</div>
+    </div>
+  );
+}
+
+/* ---------- BILAN ---------- */
+function Bilan({orders,products}){
+  const enc=orders.filter(o=>(o.status||"En cours")==="En cours").length;
+  const liv=orders.filter(o=>o.status==="Livrée").length;
+  const ca=orders.filter(o=>o.status!=="Annulée").reduce((s,o)=>s+(Number(o.total)||0),0);
+  const low=products.filter(p=>(Number(p.stock)||0)<=10);
+  const count={};
+  orders.forEach(o=>(o.items||[]).forEach(it=>{count[it.nom]=(count[it.nom]||0)+(it.qte||1);}));
+  const top=Object.entries(count).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  return(
+    <div style={{padding:16}}>
+      <h2 className="disp" style={{fontSize:24,marginBottom:14}}>Tableau de bord</h2>
+      <div style={{display:"flex",gap:10,marginBottom:10}}>
+        <Stat k="Chiffre d'affaires" v={money(ca)} color={C.gold}/>
+        <Stat k="Commandes" v={orders.length}/>
+      </div>
+      <div style={{display:"flex",gap:10,marginBottom:18}}>
+        <Stat k="En cours" v={enc} color={C.blue}/>
+        <Stat k="Livrées" v={liv} color={C.green}/>
+        <Stat k="Produits" v={products.length}/>
+      </div>
+      <div className="card" style={{background:C.card,borderRadius:16,padding:16,marginBottom:14,boxShadow:"0 2px 10px #1412100c"}}>
+        <div style={{fontWeight:600,marginBottom:10}}>⚠️ Stock faible <span style={{color:C.soft,fontWeight:400,fontSize:12}}>(≤ 10)</span></div>
+        {low.length===0?<div style={{color:C.soft,fontSize:13}}>Tout est bien approvisionné ✅</div>:
+          low.map(p=><div key={p.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid "+C.line,fontSize:14}}><span>{p.brand} · {p.name}</span><b style={{color:(Number(p.stock)||0)<=3?C.red:C.gold}}>{p.stock||0}</b></div>)}
+      </div>
+      <div className="card" style={{background:C.card,borderRadius:16,padding:16,boxShadow:"0 2px 10px #1412100c"}}>
+        <div style={{fontWeight:600,marginBottom:10}}>🏆 Top produits</div>
+        {top.length===0?<div style={{color:C.soft,fontSize:13}}>Pas encore de ventes.</div>:
+          top.map(([n,q],i)=><div key={n} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid "+C.line,fontSize:14}}><span>{i+1}. {n}</span><b>{q} vendus</b></div>)}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- COMMANDES ---------- */
+const STATUTS=["En cours","Confirmée","Livrée","Annulée"];
+const stColor=s=>s==="Livrée"?C.green:s==="Annulée"?C.red:s==="Confirmée"?C.blue:C.gold;
+function Commandes({orders,cfg,setStatus,delOrder}){
+  const [filt,setFilt]=useState("Tous");
+  const [open,setOpen]=useState(null);
+  const list=(filt==="Tous"?orders:orders.filter(o=>(o.status||"En cours")===filt));
+  const o=open;
+  return(
+    <div style={{padding:16}}>
+      <h2 className="disp" style={{fontSize:24,marginBottom:12}}>Commandes</h2>
+      <div style={{display:"flex",gap:8,overflowX:"auto",marginBottom:14,paddingBottom:4}}>
+        {["Tous"].concat(STATUTS).map(s=>
+          <button key={s} onClick={()=>setFilt(s)} style={{whiteSpace:"nowrap",padding:"8px 14px",borderRadius:99,border:"1px solid "+(filt===s?C.ink:C.line),background:filt===s?C.ink:"#fff",color:filt===s?"#fff":C.soft,fontSize:13}}>{s}</button>)}
+      </div>
+      {list.length===0&&<div style={{color:C.soft,fontSize:14,textAlign:"center",marginTop:40}}>Aucune commande.</div>}
+      {list.map(o=>{const st=o.status||"En cours";return(
+        <div key={o._id} className="card tapb" onClick={()=>setOpen(o)} style={{background:C.card,borderRadius:14,padding:14,marginBottom:10,boxShadow:"0 2px 8px #1412100a",borderLeft:"4px solid "+stColor(st)}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div><div style={{fontWeight:600}}>{o.nom||"Client"}</div>
+              <div style={{fontSize:12,color:C.soft,marginTop:2}}>{o.tel||""} · {(o.items?o.items.length:0)} article(s) · {o.date||""}</div></div>
+            <div style={{textAlign:"right"}}><div style={{fontWeight:600,color:C.gold}}>{money(o.total)}</div>
+              <div style={{fontSize:11,color:stColor(st),marginTop:2}}>● {st}</div></div>
+          </div>
+        </div>
+      );})}
+      {o&&<Sheet onClose={()=>setOpen(null)} title="Commande">
+        <div style={{padding:18}}>
+          <div style={{fontSize:20}} className="disp">{o.nom||"Client"}</div>
+          <div style={{color:C.soft,fontSize:13,marginBottom:2}}>{o.tel||""}</div>
+          <div style={{color:C.soft,fontSize:13,marginBottom:14}}>{[o.adresse,o.ville,o.gouvernorat].filter(Boolean).join(", ")}</div>
+          <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+            {STATUTS.map(s=><button key={s} onClick={()=>setStatus(o._id,s)} style={{padding:"7px 12px",borderRadius:99,fontSize:12,border:"1px solid "+stColor(s),background:(o.status||"En cours")===s?stColor(s):"#fff",color:(o.status||"En cours")===s?"#fff":stColor(s)}}>{s}</button>)}
+          </div>
+          <div style={{background:C.cream,borderRadius:12,padding:12,marginBottom:14}}>
+            {(o.items||[]).map((it,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:i<(o.items.length-1)?"1px solid "+C.line:"none",fontSize:14}}>
+              <span>{it.qte||1}× {it.nom} <span style={{color:C.soft}}>{it.marque}</span></span><b>{money((it.qte||1)*(Number(it.prix)||0))}</b></div>)}
+            <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,fontWeight:600}}><span>Total</span><span style={{color:C.gold,fontSize:18}} className="disp">{money(o.total)}</span></div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <button className="tapb" onClick={()=>genPDF("facture",o,cfg)} style={btnDark}>🧾 Facture PDF</button>
+            <button className="tapb" onClick={()=>genPDF("livraison",o,cfg)} style={btnDark}>🚚 Bon livraison</button>
+            <a className="tapb" href={"https://wa.me/"+(cfg.whatsapp||"")+"?text="+encodeURIComponent("Bonjour "+(o.nom||"")+", votre commande ELYNE ("+money(o.total)+") est en cours de traitement.")} target="_blank" style={{...btnGreen,textDecoration:"none",textAlign:"center"}}>💬 WhatsApp</a>
+            <button className="tapb" onClick={()=>{if(window.confirm("Supprimer cette commande ?")){delOrder(o._id);setOpen(null);}}} style={btnRed}>🗑 Supprimer</button>
+          </div>
+        </div>
+      </Sheet>}
+    </div>
+  );
+}
+const btnDark={padding:"13px",borderRadius:10,border:"none",background:C.ink,color:"#fff",fontSize:13,fontWeight:500};
+const btnGreen={padding:"13px",borderRadius:10,border:"none",background:C.green,color:"#fff",fontSize:13,fontWeight:500,display:"block"};
+const btnRed={padding:"13px",borderRadius:10,border:"1px solid "+C.red,background:"#fff",color:C.red,fontSize:13,fontWeight:500};
+
+/* ---------- STOCK ---------- */
+function Stock({products,setStock,saveProduct,delProduct}){
+  const [q,setQ]=useState("");
+  const [add,setAdd]=useState(false);
+  const list=products.filter(p=>((p.name||"")+(p.brand||"")).toLowerCase().includes(q.toLowerCase())).sort((a,b)=>(a.stock||0)-(b.stock||0));
+  return(
+    <div style={{padding:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <h2 className="disp" style={{fontSize:24}}>Stock</h2>
+        <button className="tapb" onClick={()=>setAdd(true)} style={{padding:"9px 14px",borderRadius:99,border:"none",background:C.gold,color:"#fff",fontSize:13,fontWeight:600}}>+ Produit</button>
+      </div>
+      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Rechercher un produit…" style={{width:"100%",padding:"12px 14px",borderRadius:10,border:"1px solid "+C.line,marginBottom:14,fontSize:14,outline:"none"}}/>
+      {list.map(p=>(
+        <div key={p.id} className="card" style={{background:C.card,borderRadius:14,padding:14,marginBottom:10,boxShadow:"0 2px 8px #1412100a"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:11,color:C.soft}}>{p.brand} · {p.cat}</div>
+              <div style={{fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</div>
+              <div style={{fontSize:13,color:C.gold,marginTop:2}}>{money(p.price)}</div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <button onClick={()=>setStock(p.id,Math.max(0,(Number(p.stock)||0)-1))} style={stepBtn}>−</button>
+              <div style={{width:38,textAlign:"center"}}>
+                <div style={{fontWeight:700,fontSize:17,color:(Number(p.stock)||0)<=10?C.red:C.ink}}>{p.stock||0}</div>
+                <div style={{fontSize:9,color:C.soft}}>stock</div>
+              </div>
+              <button onClick={()=>setStock(p.id,(Number(p.stock)||0)+1)} style={stepBtn}>+</button>
+              <button onClick={()=>{if(window.confirm("Supprimer "+p.name+" ?"))delProduct(p.id);}} style={{...stepBtn,color:C.red,borderColor:C.line}}>🗑</button>
+            </div>
+          </div>
+        </div>
+      ))}
+      {add&&<AddProduct onClose={()=>setAdd(false)} save={p=>{saveProduct(p);setAdd(false);}}/>}
+    </div>
+  );
+}
+const stepBtn={width:34,height:34,borderRadius:9,border:"1px solid "+C.line,background:"#fff",fontSize:17,lineHeight:"30px"};
+
+function AddProduct({onClose,save}){
+  const [f,setF]=useState({brand:"",name:"",cat:"Parfums Femme",price:"",old:"",stock:"",desc:""});
+  const set=k=>e=>setF({...f,[k]:e.target.value});
+  const cats=["Parfums Femme","Parfums Homme","Maquillage","Soins Visage"];
+  const kindFor=c=>c.indexOf("Parfum")>=0?"perfume":c==="Maquillage"?"lipstick":"dropper";
+  const ok=()=>{ if(!f.name||!f.price){alert("Nom et prix requis.");return;} save({brand:f.brand||"ELYNE",name:f.name,cat:f.cat,kind:kindFor(f.cat),sch:["#caa07a","#9c7550","#1c1c1c"],price:Number(f.price),old:Number(f.old||f.price),rating:5,reviews:0,stock:Number(f.stock||0),badge:"Nouveau",desc:f.desc||""}); };
+  const inp={width:"100%",padding:"12px 14px",borderRadius:10,border:"1px solid "+C.line,marginBottom:10,fontSize:14,outline:"none"};
+  return(<Sheet onClose={onClose} title="Nouveau produit"><div style={{padding:18}}>
+    <input style={inp} placeholder="Marque (ex: Chanel)" value={f.brand} onChange={set("brand")}/>
+    <input style={inp} placeholder="Nom du produit *" value={f.name} onChange={set("name")}/>
+    <select style={inp} value={f.cat} onChange={set("cat")}>{cats.map(c=><option key={c}>{c}</option>)}</select>
+    <div style={{display:"flex",gap:10}}><input style={inp} type="number" placeholder="Prix (DT) *" value={f.price} onChange={set("price")}/><input style={inp} type="number" placeholder="Ancien prix" value={f.old} onChange={set("old")}/></div>
+    <input style={inp} type="number" placeholder="Stock" value={f.stock} onChange={set("stock")}/>
+    <textarea style={{...inp,height:70,resize:"none"}} placeholder="Description" value={f.desc} onChange={set("desc")}/>
+    <button className="tapb" onClick={ok} style={{width:"100%",padding:14,borderRadius:10,border:"none",background:C.gold,color:"#fff",fontWeight:600,letterSpacing:1}}>Ajouter le produit</button>
+  </div></Sheet>);
+}
+
+/* ---------- REGLAGES ---------- */
+function Reglages({cfg,saveCfg,changePass,logout,install}){
+  const [wa,setWa]=useState(cfg.whatsapp||"");
+  const [p1,setP1]=useState(""),[p2,setP2]=useState("");
+  useEffect(()=>setWa(cfg.whatsapp||""),[cfg.whatsapp]);
+  const inp={width:"100%",padding:"12px 14px",borderRadius:10,border:"1px solid "+C.line,marginBottom:10,fontSize:14,outline:"none"};
+  return(
+    <div style={{padding:16}}>
+      <h2 className="disp" style={{fontSize:24,marginBottom:14}}>Réglages</h2>
+      <Block title="WhatsApp">
+        <div style={{fontSize:12,color:C.soft,marginBottom:8}}>Numéro au format 216 + numéro (sans +, ni espaces)</div>
+        <input style={inp} value={wa} onChange={e=>setWa(e.target.value)} placeholder="21620123456"/>
+        <button className="tapb" onClick={()=>saveCfg({whatsapp:wa})} style={save1}>Enregistrer le numéro</button>
+      </Block>
+      <Block title="Mot de passe">
+        <input style={inp} type="password" value={p1} onChange={e=>setP1(e.target.value)} placeholder="Nouveau mot de passe"/>
+        <input style={inp} type="password" value={p2} onChange={e=>setP2(e.target.value)} placeholder="Confirmer"/>
+        <button className="tapb" onClick={()=>{if(!p1||p1.length<4){alert("4 caractères minimum.");return;} if(p1!==p2){alert("Les mots de passe ne correspondent pas.");return;} changePass(p1);setP1("");setP2("");}} style={save1}>Changer le mot de passe</button>
+      </Block>
+      <Block title="Boutique en ligne">
+        <a href="https://elynecosimitics.com" target="_blank" style={{...save1,display:"block",textAlign:"center",textDecoration:"none",background:C.ink}}>🌐 Ouvrir le site</a>
+      </Block>
+      {install&&<button className="tapb" onClick={install} style={{...save1,background:C.green,marginBottom:12}}>📲 Installer l'application</button>}
+      <button className="tapb" onClick={logout} style={{...save1,background:"#fff",color:C.red,border:"1px solid "+C.red}}>Se déconnecter</button>
+      <div style={{textAlign:"center",color:C.soft,fontSize:11,marginTop:18}}>ELYNE Cosmetics · Gestion v1.0</div>
+    </div>
+  );
+}
+const save1={width:"100%",padding:13,borderRadius:10,border:"none",background:C.gold,color:"#fff",fontWeight:600,fontSize:14};
+function Block({title,children}){return(<div className="card" style={{background:C.card,borderRadius:16,padding:16,marginBottom:14,boxShadow:"0 2px 10px #1412100c"}}>
+  <div style={{fontWeight:600,marginBottom:10}}>{title}</div>{children}</div>);}
+
+/* ---------- SHEET ---------- */
+function Sheet({title,onClose,children}){
+  return(<div onClick={onClose} style={{position:"fixed",inset:0,background:"#0008",zIndex:100,display:"flex",alignItems:"flex-end"}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:C.bg,width:"100%",maxHeight:"90vh",borderRadius:"20px 20px 0 0",overflowY:"auto",animation:"pop .25s ease"}}>
+      <div style={{position:"sticky",top:0,background:C.bg,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid "+C.line,zIndex:2}}>
+        <b>{title}</b><button onClick={onClose} style={{border:"none",background:"none",fontSize:22,color:C.soft}}>×</button>
+      </div>{children}
+    </div></div>);
+}
+
+/* ---------- APP ---------- */
+function App(){
+  const [tab,setTab]=useState("bilan");
+  const [auth,setAuth]=useState(false);
+  const [orders,setOrders]=useState([]);
+  const [products,setProducts]=useState([]);
+  const [cfg,setCfg]=useState({whatsapp:"216126497"});
+  const [err,setErr]=useState("");
+  const [install,setInstall]=useState(null);
+
+  useEffect(()=>{
+    const h=e=>{e.preventDefault();setInstall(()=>()=>{e.prompt();});};
+    window.addEventListener("beforeinstallprompt",h);
+    if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").catch(()=>{});}
+    return ()=>window.removeEventListener("beforeinstallprompt",h);
+  },[]);
+  useEffect(()=>{
+    if(!db)return;
+    const u1=db.collection("orders").onSnapshot(s=>{const a=s.docs.map(d=>({_id:d.id,...d.data()}));a.sort((x,y)=>(y._t||0)-(x._t||0));setOrders(a);},e=>setErr(e.message));
+    const u2=db.collection("products").onSnapshot(s=>{const a=s.docs.map(d=>d.data());a.sort((x,y)=>(x.id||0)-(y.id||0));setProducts(a);},e=>setErr(e.message));
+    const u3=db.collection("config").doc("site").onSnapshot(d=>{if(d.exists)setCfg(c=>({...c,...d.data()}));},e=>{});
+    return ()=>{u1();u2();u3();};
+  },[]);
+
+  const setStatus=(id,st)=>db&&db.collection("orders").doc(id).set({status:st},{merge:true}).catch(e=>alert("Erreur: "+e.message));
+  const delOrder=id=>db&&db.collection("orders").doc(id).delete().catch(e=>alert("Erreur: "+e.message));
+  const setStock=(pid,v)=>db&&db.collection("products").doc(String(pid)).set({stock:v},{merge:true}).catch(e=>alert("Erreur: "+e.message));
+  const delProduct=pid=>db&&db.collection("products").doc(String(pid)).delete().catch(e=>alert("Erreur: "+e.message));
+  const saveProduct=p=>{const id=(products.length?Math.max.apply(null,products.map(x=>x.id||0)):0)+1;db&&db.collection("products").doc(String(id)).set({...p,id}).catch(e=>alert("Erreur: "+e.message));};
+  const saveCfg=nc=>db&&db.collection("config").doc("site").set(nc,{merge:true}).then(()=>alert("Enregistré ✓")).catch(e=>alert("Erreur: "+e.message));
+  const changePass=p=>db&&db.collection("config").doc("site").set({adminPass:p},{merge:true}).then(()=>alert("Mot de passe changé ✓")).catch(e=>alert("Erreur: "+e.message));
+
+  if(!auth) return <Login pass={cfg.adminPass} onOk={()=>setAuth(true)}/>;
+
+  return(
+    <div style={{maxWidth:520,margin:"0 auto",minHeight:"100vh",paddingBottom:78}}>
+      <div style={{background:C.ink,padding:"16px 16px 14px",position:"sticky",top:0,zIndex:20}}><Logo small/></div>
+      {err&&<div style={{background:"#FDECEC",color:C.red,padding:"12px 16px",fontSize:12.5,lineHeight:1.5}}>
+        ⚠️ Accès base de données refusé. Active les règles Firestore (read/write) dans la console Firebase pour voir/gérer les données. <b>({err})</b></div>}
+      {tab==="bilan"&&<Bilan orders={orders} products={products}/>}
+      {tab==="cmd"&&<Commandes orders={orders} cfg={cfg} setStatus={setStatus} delOrder={delOrder}/>}
+      {tab==="stock"&&<Stock products={products} setStock={setStock} saveProduct={saveProduct} delProduct={delProduct}/>}
+      {tab==="set"&&<Reglages cfg={cfg} saveCfg={saveCfg} changePass={changePass} logout={()=>setAuth(false)} install={install}/>}
+      <div style={{position:"fixed",bottom:0,left:0,right:0,maxWidth:520,margin:"0 auto",background:"#fff",borderTop:"1px solid "+C.line,display:"flex",paddingBottom:"env(safe-area-inset-bottom)"}}>
+        {[["bilan","Bilan"],["cmd","Commandes"],["stock","Stock"],["set","Réglages"]].map(([k,l])=>
+          <button key={k} onClick={()=>setTab(k)} style={{flex:1,border:"none",background:"none",padding:"10px 0 12px",color:tab===k?C.ink:C.soft}}>
+            <div style={{fontSize:20,opacity:tab===k?1:.5}}>{ICON[k]}</div>
+            <div style={{fontSize:11,marginTop:2,fontWeight:tab===k?600:400}}>{l}</div>
+          </button>)}
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
