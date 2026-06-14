@@ -98,8 +98,39 @@ function genPDF(kind,order,cfg,action){
   doc.setTextColor.apply(doc,soft); doc.setFontSize(8);
   doc.text("Merci pour votre confiance - ELYNE COSMETICS",W/2,H-18,{align:"center"});
   doc.text("Document genere automatiquement - elynecosimitics.com",W/2,H-13,{align:"center"});
-  if(action==="print"){ try{doc.autoPrint();}catch(e){} const u=doc.output("bloburl"); const w=window.open(u,"_blank"); if(!w){doc.save("Elyne-"+kind+".pdf");} }
-  else { doc.save("Elyne-"+kind+"-"+String(order.nom||"client").replace(/\s+/g,"_")+".pdf"); }
+  const fname="Elyne-"+kind+"-"+String(order.nom||"client").replace(/\s+/g,"_")+".pdf";
+  const blob=doc.output("blob");
+  let file=null; try{ file=new File([blob],fname,{type:"application/pdf"}); }catch(e){}
+  try{ if(file&&navigator.canShare&&navigator.canShare({files:[file]})){ navigator.share({files:[file],title:fname}).catch(function(){dl();}); return; } }catch(e){}
+  dl();
+  function dl(){
+    const url=URL.createObjectURL(blob);
+    if(action==="print"){
+      const w=window.open(url,"_blank");
+      if(w){ try{w.focus();}catch(e){} } else { lnk(url); }
+    } else { lnk(url); }
+    setTimeout(function(){URL.revokeObjectURL(url);},4000);
+  }
+  function lnk(url){ const a=document.createElement("a"); a.href=url; a.download=fname; a.target="_blank"; document.body.appendChild(a); a.click(); setTimeout(function(){a.remove();},500); }
+}
+
+/* ---------- IMAGE RESIZE ---------- */
+function resizeImg(file,cb){
+  const r=new FileReader();
+  r.onload=function(){
+    const img=new Image();
+    img.onload=function(){
+      const max=560; let w=img.width,h=img.height;
+      if(w>h){ if(w>max){h=Math.round(h*max/w);w=max;} } else { if(h>max){w=Math.round(w*max/h);h=max;} }
+      const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
+      cv.getContext("2d").drawImage(img,0,0,w,h);
+      cb(cv.toDataURL("image/jpeg",0.62));
+    };
+    img.onerror=function(){cb(null);};
+    img.src=r.result;
+  };
+  r.onerror=function(){cb(null);};
+  r.readAsDataURL(file);
 }
 
 /* ---------- UI bits ---------- */
@@ -285,7 +316,10 @@ function Stock({products,setStock,saveProduct,delProduct}){
       <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Rechercher un produit…" style={{width:"100%",padding:"12px 14px",borderRadius:10,border:"1px solid "+C.line,marginBottom:14,fontSize:14,outline:"none"}}/>
       {list.map(p=>(
         <div key={p.id} className="card" style={{background:C.card,borderRadius:14,padding:14,marginBottom:10,boxShadow:"0 2px 8px #1412100a"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+            <div style={{width:46,height:46,borderRadius:10,overflow:"hidden",flexShrink:0,background:C.cream,display:"flex",alignItems:"center",justifyContent:"center",border:"1px solid "+C.line}}>
+              {p.img?<img src={p.img} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:18}}>🧴</span>}
+            </div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:11,color:C.soft}}>{p.brand} · {p.cat}</div>
               <div style={{fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</div>
@@ -311,12 +345,20 @@ const stepBtn={width:34,height:34,borderRadius:9,border:"1px solid "+C.line,back
 
 function AddProduct({onClose,save}){
   const [f,setF]=useState({brand:"",name:"",cat:"Parfums Femme",price:"",old:"",stock:"",desc:""});
+  const [img,setImg]=useState("");
   const set=k=>e=>setF({...f,[k]:e.target.value});
   const cats=["Parfums Femme","Parfums Homme","Maquillage","Soins Visage"];
   const kindFor=c=>c.indexOf("Parfum")>=0?"perfume":c==="Maquillage"?"lipstick":"dropper";
-  const ok=()=>{ if(!f.name||!f.price){alert("Nom et prix requis.");return;} save({brand:f.brand||"ELYNE",name:f.name,cat:f.cat,kind:kindFor(f.cat),sch:["#caa07a","#9c7550","#1c1c1c"],price:Number(f.price),old:Number(f.old||f.price),rating:5,reviews:0,stock:Number(f.stock||0),badge:"Nouveau",desc:f.desc||""}); };
+  const onPhoto=e=>{const file=e.target.files&&e.target.files[0]; if(!file)return; resizeImg(file,function(d){ if(d)setImg(d); else alert("Image illisible."); });};
+  const ok=()=>{ if(!f.name||!f.price){alert("Nom et prix requis.");return;} save({brand:f.brand||"ELYNE",name:f.name,cat:f.cat,kind:kindFor(f.cat),sch:["#caa07a","#9c7550","#1c1c1c"],price:Number(f.price),old:Number(f.old||f.price),rating:5,reviews:0,stock:Number(f.stock||0),badge:"Nouveau",desc:f.desc||"",img:img||""}); };
   const inp={width:"100%",padding:"12px 14px",borderRadius:10,border:"1px solid "+C.line,marginBottom:10,fontSize:14,outline:"none"};
   return(<Sheet onClose={onClose} title="Nouveau produit"><div style={{padding:18}}>
+    <label style={{display:"block",marginBottom:12,cursor:"pointer"}}>
+      <div style={{width:"100%",height:150,borderRadius:12,border:"1.5px dashed "+C.gold,background:img?"#000":C.cream,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",color:C.gold}}>
+        {img?<img src={img} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:<span style={{fontSize:13}}>📷 Ajouter une photo du produit</span>}
+      </div>
+      <input type="file" accept="image/*" onChange={onPhoto} style={{display:"none"}}/>
+    </label>
     <input style={inp} placeholder="Marque (ex: Chanel)" value={f.brand} onChange={set("brand")}/>
     <input style={inp} placeholder="Nom du produit *" value={f.name} onChange={set("name")}/>
     <select style={inp} value={f.cat} onChange={set("cat")}>{cats.map(c=><option key={c}>{c}</option>)}</select>
@@ -372,7 +414,7 @@ function Sheet({title,onClose,children}){
 /* ---------- APP ---------- */
 function App(){
   const [tab,setTab]=useState("bilan");
-  const [auth,setAuth]=useState(false);
+  const [auth,setAuth]=useState(()=>{try{return localStorage.getItem("elyne_auth")==="1";}catch(e){return false;}});
   const [orders,setOrders]=useState([]);
   const [products,setProducts]=useState([]);
   const [cfg,setCfg]=useState({whatsapp:"216126497"});
@@ -401,7 +443,7 @@ function App(){
   const saveCfg=nc=>db&&db.collection("config").doc("site").set(nc,{merge:true}).then(()=>alert("Enregistré ✓")).catch(e=>alert("Erreur: "+e.message));
   const changePass=p=>db&&db.collection("config").doc("site").set({adminPass:p},{merge:true}).then(()=>alert("Mot de passe changé ✓")).catch(e=>alert("Erreur: "+e.message));
 
-  if(!auth) return <Login pass={cfg.adminPass} onOk={()=>setAuth(true)}/>;
+  if(!auth) return <Login pass={cfg.adminPass} onOk={()=>{try{localStorage.setItem("elyne_auth","1");}catch(e){} setAuth(true);}}/>;
 
   return(
     <div style={{maxWidth:520,margin:"0 auto",minHeight:"100vh",paddingBottom:78}}>
@@ -411,7 +453,7 @@ function App(){
       {tab==="bilan"&&<Bilan orders={orders} products={products}/>}
       {tab==="cmd"&&<Commandes orders={orders} cfg={cfg} setStatus={setStatus} delOrder={delOrder}/>}
       {tab==="stock"&&<Stock products={products} setStock={setStock} saveProduct={saveProduct} delProduct={delProduct}/>}
-      {tab==="set"&&<Reglages cfg={cfg} saveCfg={saveCfg} changePass={changePass} logout={()=>setAuth(false)} install={install}/>}
+      {tab==="set"&&<Reglages cfg={cfg} saveCfg={saveCfg} changePass={changePass} logout={()=>{try{localStorage.removeItem("elyne_auth");}catch(e){} setAuth(false);}} install={install}/>}
       <div style={{position:"fixed",bottom:0,left:0,right:0,maxWidth:520,margin:"0 auto",background:"#fff",borderTop:"1px solid "+C.line,display:"flex",paddingBottom:"env(safe-area-inset-bottom)"}}>
         {[["bilan","Bilan"],["cmd","Commandes"],["stock","Stock"],["set","Réglages"]].map(([k,l])=>
           <button key={k} onClick={()=>setTab(k)} style={{flex:1,border:"none",background:"none",padding:"10px 0 12px",color:tab===k?C.ink:C.soft}}>
