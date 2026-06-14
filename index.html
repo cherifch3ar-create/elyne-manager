@@ -43,15 +43,14 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const {useState,useEffect,useRef}=React;
+const {useState,useEffect}=React;
 const C={bg:"#F4F1EC",card:"#fff",ink:"#141210",soft:"#8C857C",line:"#ECE6DD",gold:"#9A7B4F",green:"#1F9E55",red:"#C8102E",cream:"#FAF7F3",blue:"#2563EB"};
-const disp={fontFamily:"'Bodoni Moda',Georgia,serif"};
 const CUR="DT";
 const money=n=>(Number(n)||0).toFixed(0)+" "+CUR;
 const DEFAULT_PASS="elyne123";
 
 /* ---------- PDF ---------- */
-function genPDF(kind,order,cfg){
+function genPDF(kind,order,cfg,action){
   if(!window.jspdf){alert("PDF: librairie non chargée, réessaie.");return;}
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:"mm",format:"a4"});
@@ -85,7 +84,7 @@ function genPDF(kind,order,cfg){
   doc.autoTable({
     startY:82,
     head:[["Designation","Marque","Qte","P.U. (DT)","Total (DT)"]],
-    body:its.length?its:[["—","","","",""]],
+    body:its.length?its:[["-","","","",""]],
     foot:[["","","","TOTAL",Number(total).toFixed(2)+" DT"]],
     headStyles:{fillColor:ink,textColor:255,fontStyle:"bold"},
     footStyles:{fillColor:gold,textColor:255,fontStyle:"bold",fontSize:11},
@@ -97,9 +96,10 @@ function genPDF(kind,order,cfg){
   doc.setDrawColor(231,224,214); doc.setLineWidth(0.5); doc.line(W-70,y,W-20,y);
   doc.setTextColor.apply(doc,soft); doc.setFontSize(8); doc.text("Cachet & Signature",W-20,y+5,{align:"right"});
   doc.setTextColor.apply(doc,soft); doc.setFontSize(8);
-  doc.text("Merci pour votre confiance — ELYNE COSMETICS",W/2,H-18,{align:"center"});
-  doc.text("Document genere automatiquement — elynecosimitics.com",W/2,H-13,{align:"center"});
-  doc.save("Elyne-"+kind+"-"+String(order.nom||"client").replace(/\s+/g,"_")+".pdf");
+  doc.text("Merci pour votre confiance - ELYNE COSMETICS",W/2,H-18,{align:"center"});
+  doc.text("Document genere automatiquement - elynecosimitics.com",W/2,H-13,{align:"center"});
+  if(action==="print"){ try{doc.autoPrint();}catch(e){} const u=doc.output("bloburl"); const w=window.open(u,"_blank"); if(!w){doc.save("Elyne-"+kind+".pdf");} }
+  else { doc.save("Elyne-"+kind+"-"+String(order.nom||"client").replace(/\s+/g,"_")+".pdf"); }
 }
 
 /* ---------- UI bits ---------- */
@@ -111,11 +111,10 @@ function Logo({small}){return(
 );}
 const ICON={bilan:"📊",cmd:"🧾",stock:"📦",set:"⚙️"};
 
-function Stat({k,v,sub,color}){return(
+function Stat({k,v,color}){return(
   <div className="card" style={{background:C.card,borderRadius:16,padding:"16px 14px",boxShadow:"0 2px 10px #1412100c",flex:1,minWidth:0}}>
     <div style={{fontSize:22,fontWeight:600,color:color||C.ink}}>{v}</div>
     <div style={{fontSize:12,color:C.soft,marginTop:2}}>{k}</div>
-    {sub&&<div style={{fontSize:11,color:C.gold,marginTop:3}}>{sub}</div>}
   </div>
 );}
 
@@ -141,24 +140,61 @@ function Login({pass,onOk}){
 
 /* ---------- BILAN ---------- */
 function Bilan({orders,products}){
+  const valid=orders.filter(o=>o.status!=="Annulée");
   const enc=orders.filter(o=>(o.status||"En cours")==="En cours").length;
+  const conf=orders.filter(o=>o.status==="Confirmée").length;
   const liv=orders.filter(o=>o.status==="Livrée").length;
-  const ca=orders.filter(o=>o.status!=="Annulée").reduce((s,o)=>s+(Number(o.total)||0),0);
+  const ann=orders.filter(o=>o.status==="Annulée").length;
+  const ca=valid.reduce((s,o)=>s+(Number(o.total)||0),0);
+  const panier=valid.length?Math.round(ca/valid.length):0;
   const low=products.filter(p=>(Number(p.stock)||0)<=10);
-  const count={};
-  orders.forEach(o=>(o.items||[]).forEach(it=>{count[it.nom]=(count[it.nom]||0)+(it.qte||1);}));
+  const days=[]; const today=new Date();
+  for(let i=6;i>=0;i--){const d=new Date(today);d.setDate(d.getDate()-i);days.push({key:d.toLocaleDateString("fr-FR"),lbl:["D","L","M","M","J","V","S"][d.getDay()],v:0});}
+  const idx={}; days.forEach((d,i)=>idx[d.key]=i);
+  valid.forEach(o=>{const k=o.date; if(k in idx) days[idx[k]].v+=(Number(o.total)||0);});
+  const maxV=Math.max(1,Math.max.apply(null,days.map(d=>d.v)));
+  const count={}; orders.forEach(o=>(o.items||[]).forEach(it=>{count[it.nom]=(count[it.nom]||0)+(it.qte||1);}));
   const top=Object.entries(count).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const stRows=[["En cours",enc,C.gold],["Confirmée",conf,C.blue],["Livrée",liv,C.green],["Annulée",ann,C.red]];
+  const maxSt=Math.max(1,enc,conf,liv,ann);
   return(
     <div style={{padding:16}}>
       <h2 className="disp" style={{fontSize:24,marginBottom:14}}>Tableau de bord</h2>
-      <div style={{display:"flex",gap:10,marginBottom:10}}>
-        <Stat k="Chiffre d'affaires" v={money(ca)} color={C.gold}/>
-        <Stat k="Commandes" v={orders.length}/>
+      <div className="card" style={{background:"linear-gradient(135deg,#211d18,#46392a)",borderRadius:20,padding:20,color:"#fff",marginBottom:14,boxShadow:"0 8px 24px #14121026"}}>
+        <div style={{fontSize:11,color:"#d9c9a8",letterSpacing:1.5}}>CHIFFRE D'AFFAIRES</div>
+        <div className="disp" style={{fontSize:34,marginTop:2,color:"#fff"}}>{money(ca)}</div>
+        <div style={{display:"flex",gap:22,marginTop:16}}>
+          <div><div style={{fontSize:18,fontWeight:600}}>{orders.length}</div><div style={{fontSize:11,color:"#bcae93"}}>Commandes</div></div>
+          <div><div style={{fontSize:18,fontWeight:600}}>{money(panier)}</div><div style={{fontSize:11,color:"#bcae93"}}>Panier moyen</div></div>
+          <div><div style={{fontSize:18,fontWeight:600,color:"#7fe0a6"}}>{liv}</div><div style={{fontSize:11,color:"#bcae93"}}>Livrées</div></div>
+        </div>
       </div>
-      <div style={{display:"flex",gap:10,marginBottom:18}}>
-        <Stat k="En cours" v={enc} color={C.blue}/>
-        <Stat k="Livrées" v={liv} color={C.green}/>
+      <div style={{display:"flex",gap:10,marginBottom:14}}>
+        <Stat k="En cours" v={enc} color={C.gold}/>
+        <Stat k="Confirmées" v={conf} color={C.blue}/>
         <Stat k="Produits" v={products.length}/>
+      </div>
+      <div className="card" style={{background:C.card,borderRadius:16,padding:16,marginBottom:14,boxShadow:"0 2px 10px #1412100c"}}>
+        <div style={{fontWeight:600,marginBottom:14}}>📈 Ventes — 7 derniers jours</div>
+        <div style={{display:"flex",alignItems:"flex-end",gap:8,height:110}}>
+          {days.map((d,i)=>(
+            <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+              <div style={{fontSize:9,color:C.soft}}>{d.v>0?Math.round(d.v):""}</div>
+              <div style={{width:"100%",height:Math.max(4,(d.v/maxV)*78),background:d.v>0?"linear-gradient(180deg,"+C.gold+",#c2a25f)":C.line,borderRadius:6}}></div>
+              <div style={{fontSize:10,color:C.soft}}>{d.lbl}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="card" style={{background:C.card,borderRadius:16,padding:16,marginBottom:14,boxShadow:"0 2px 10px #1412100c"}}>
+        <div style={{fontWeight:600,marginBottom:12}}>📋 Répartition des commandes</div>
+        {stRows.map(([n,v,col])=>(
+          <div key={n} style={{display:"flex",alignItems:"center",gap:10,marginBottom:9}}>
+            <div style={{width:74,fontSize:12,color:C.soft}}>{n}</div>
+            <div style={{flex:1,height:9,background:C.line,borderRadius:9,overflow:"hidden"}}><div style={{width:(v/maxSt*100)+"%",height:"100%",background:col,borderRadius:9}}></div></div>
+            <div style={{width:20,textAlign:"right",fontWeight:600,fontSize:13}}>{v}</div>
+          </div>
+        ))}
       </div>
       <div className="card" style={{background:C.card,borderRadius:16,padding:16,marginBottom:14,boxShadow:"0 2px 10px #1412100c"}}>
         <div style={{fontWeight:600,marginBottom:10}}>⚠️ Stock faible <span style={{color:C.soft,fontWeight:400,fontSize:12}}>(≤ 10)</span></div>
@@ -177,6 +213,10 @@ function Bilan({orders,products}){
 /* ---------- COMMANDES ---------- */
 const STATUTS=["En cours","Confirmée","Livrée","Annulée"];
 const stColor=s=>s==="Livrée"?C.green:s==="Annulée"?C.red:s==="Confirmée"?C.blue:C.gold;
+const btnDark={padding:"13px",borderRadius:10,border:"none",background:C.ink,color:"#fff",fontSize:13,fontWeight:500};
+const btnGreen={padding:"13px",borderRadius:10,border:"none",background:C.green,color:"#fff",fontSize:13,fontWeight:500,display:"block"};
+const btnRed={padding:"13px",borderRadius:10,border:"1px solid "+C.red,background:"#fff",color:C.red,fontSize:13,fontWeight:500};
+const btnOutline={padding:"13px",borderRadius:10,border:"1px solid "+C.gold,background:"#fff",color:C.gold,fontSize:13,fontWeight:500};
 function Commandes({orders,cfg,setStatus,delOrder}){
   const [filt,setFilt]=useState("Tous");
   const [open,setOpen]=useState(null);
@@ -189,7 +229,7 @@ function Commandes({orders,cfg,setStatus,delOrder}){
         {["Tous"].concat(STATUTS).map(s=>
           <button key={s} onClick={()=>setFilt(s)} style={{whiteSpace:"nowrap",padding:"8px 14px",borderRadius:99,border:"1px solid "+(filt===s?C.ink:C.line),background:filt===s?C.ink:"#fff",color:filt===s?"#fff":C.soft,fontSize:13}}>{s}</button>)}
       </div>
-      {list.length===0&&<div style={{color:C.soft,fontSize:14,textAlign:"center",marginTop:40}}>Aucune commande.</div>}
+      {list.length===0&&<div style={{color:C.soft,fontSize:14,textAlign:"center",marginTop:40}}>Aucune commande.<br/><span style={{fontSize:12}}>Les commandes du site apparaîtront ici.</span></div>}
       {list.map(o=>{const st=o.status||"En cours";return(
         <div key={o._id} className="card tapb" onClick={()=>setOpen(o)} style={{background:C.card,borderRadius:14,padding:14,marginBottom:10,boxShadow:"0 2px 8px #1412100a",borderLeft:"4px solid "+stColor(st)}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -213,9 +253,15 @@ function Commandes({orders,cfg,setStatus,delOrder}){
               <span>{it.qte||1}× {it.nom} <span style={{color:C.soft}}>{it.marque}</span></span><b>{money((it.qte||1)*(Number(it.prix)||0))}</b></div>)}
             <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,fontWeight:600}}><span>Total</span><span style={{color:C.gold,fontSize:18}} className="disp">{money(o.total)}</span></div>
           </div>
+          <div style={{fontSize:11,letterSpacing:1,color:C.soft,fontWeight:600,margin:"2px 0 8px"}}>DOCUMENTS</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <button className="tapb" onClick={()=>genPDF("livraison",o,cfg)} style={btnDark}>🚚 Bon de livraison</button>
+            <button className="tapb" onClick={()=>genPDF("facture",o,cfg)} style={btnDark}>🧾 Facture</button>
+            <button className="tapb" onClick={()=>genPDF("livraison",o,cfg,"print")} style={btnOutline}>🖨 Imprimer BL</button>
+            <button className="tapb" onClick={()=>genPDF("facture",o,cfg,"print")} style={btnOutline}>🖨 Imprimer facture</button>
+          </div>
+          <div style={{fontSize:11,letterSpacing:1,color:C.soft,fontWeight:600,margin:"6px 0 8px"}}>ACTIONS</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <button className="tapb" onClick={()=>genPDF("facture",o,cfg)} style={btnDark}>🧾 Facture PDF</button>
-            <button className="tapb" onClick={()=>genPDF("livraison",o,cfg)} style={btnDark}>🚚 Bon livraison</button>
             <a className="tapb" href={"https://wa.me/"+(cfg.whatsapp||"")+"?text="+encodeURIComponent("Bonjour "+(o.nom||"")+", votre commande ELYNE ("+money(o.total)+") est en cours de traitement.")} target="_blank" style={{...btnGreen,textDecoration:"none",textAlign:"center"}}>💬 WhatsApp</a>
             <button className="tapb" onClick={()=>{if(window.confirm("Supprimer cette commande ?")){delOrder(o._id);setOpen(null);}}} style={btnRed}>🗑 Supprimer</button>
           </div>
@@ -224,9 +270,6 @@ function Commandes({orders,cfg,setStatus,delOrder}){
     </div>
   );
 }
-const btnDark={padding:"13px",borderRadius:10,border:"none",background:C.ink,color:"#fff",fontSize:13,fontWeight:500};
-const btnGreen={padding:"13px",borderRadius:10,border:"none",background:C.green,color:"#fff",fontSize:13,fontWeight:500,display:"block"};
-const btnRed={padding:"13px",borderRadius:10,border:"1px solid "+C.red,background:"#fff",color:C.red,fontSize:13,fontWeight:500};
 
 /* ---------- STOCK ---------- */
 function Stock({products,setStock,saveProduct,delProduct}){
@@ -255,7 +298,7 @@ function Stock({products,setStock,saveProduct,delProduct}){
                 <div style={{fontSize:9,color:C.soft}}>stock</div>
               </div>
               <button onClick={()=>setStock(p.id,(Number(p.stock)||0)+1)} style={stepBtn}>+</button>
-              <button onClick={()=>{if(window.confirm("Supprimer "+p.name+" ?"))delProduct(p.id);}} style={{...stepBtn,color:C.red,borderColor:C.line}}>🗑</button>
+              <button onClick={()=>{if(window.confirm("Supprimer "+p.name+" ?"))delProduct(p.id);}} style={{...stepBtn,color:C.red}}>🗑</button>
             </div>
           </div>
         </div>
@@ -308,7 +351,7 @@ function Reglages({cfg,saveCfg,changePass,logout,install}){
       </Block>
       {install&&<button className="tapb" onClick={install} style={{...save1,background:C.green,marginBottom:12}}>📲 Installer l'application</button>}
       <button className="tapb" onClick={logout} style={{...save1,background:"#fff",color:C.red,border:"1px solid "+C.red}}>Se déconnecter</button>
-      <div style={{textAlign:"center",color:C.soft,fontSize:11,marginTop:18}}>ELYNE Cosmetics · Gestion v1.0</div>
+      <div style={{textAlign:"center",color:C.soft,fontSize:11,marginTop:18}}>ELYNE Cosmetics · Gestion v1.1</div>
     </div>
   );
 }
@@ -319,7 +362,7 @@ function Block({title,children}){return(<div className="card" style={{background
 /* ---------- SHEET ---------- */
 function Sheet({title,onClose,children}){
   return(<div onClick={onClose} style={{position:"fixed",inset:0,background:"#0008",zIndex:100,display:"flex",alignItems:"flex-end"}}>
-    <div onClick={e=>e.stopPropagation()} style={{background:C.bg,width:"100%",maxHeight:"90vh",borderRadius:"20px 20px 0 0",overflowY:"auto",animation:"pop .25s ease"}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:C.bg,width:"100%",maxWidth:520,margin:"0 auto",maxHeight:"90vh",borderRadius:"20px 20px 0 0",overflowY:"auto",animation:"pop .25s ease"}}>
       <div style={{position:"sticky",top:0,background:C.bg,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid "+C.line,zIndex:2}}>
         <b>{title}</b><button onClick={onClose} style={{border:"none",background:"none",fontSize:22,color:C.soft}}>×</button>
       </div>{children}
@@ -344,7 +387,7 @@ function App(){
   },[]);
   useEffect(()=>{
     if(!db)return;
-    const u1=db.collection("orders").onSnapshot(s=>{const a=s.docs.map(d=>({_id:d.id,...d.data()}));a.sort((x,y)=>(y._t||0)-(x._t||0));setOrders(a);},e=>setErr(e.message));
+    const u1=db.collection("orders").onSnapshot(s=>{const a=s.docs.map(d=>({_id:d.id,...d.data()}));setOrders(a);},e=>setErr(e.message));
     const u2=db.collection("products").onSnapshot(s=>{const a=s.docs.map(d=>d.data());a.sort((x,y)=>(x.id||0)-(y.id||0));setProducts(a);},e=>setErr(e.message));
     const u3=db.collection("config").doc("site").onSnapshot(d=>{if(d.exists)setCfg(c=>({...c,...d.data()}));},e=>{});
     return ()=>{u1();u2();u3();};
@@ -364,7 +407,7 @@ function App(){
     <div style={{maxWidth:520,margin:"0 auto",minHeight:"100vh",paddingBottom:78}}>
       <div style={{background:C.ink,padding:"16px 16px 14px",position:"sticky",top:0,zIndex:20}}><Logo small/></div>
       {err&&<div style={{background:"#FDECEC",color:C.red,padding:"12px 16px",fontSize:12.5,lineHeight:1.5}}>
-        ⚠️ Accès base de données refusé. Active les règles Firestore (read/write) dans la console Firebase pour voir/gérer les données. <b>({err})</b></div>}
+        ⚠️ Accès base de données refusé. Active les règles Firestore (read/write) dans la console Firebase. <b>({err})</b></div>}
       {tab==="bilan"&&<Bilan orders={orders} products={products}/>}
       {tab==="cmd"&&<Commandes orders={orders} cfg={cfg} setStatus={setStatus} delOrder={delOrder}/>}
       {tab==="stock"&&<Stock products={products} setStock={setStock} saveProduct={saveProduct} delProduct={delProduct}/>}
